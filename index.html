@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Klickspiel mit Firebase Rangliste</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background-color: #f0f8ff;
+      margin-top: 50px;
+    }
+    #playerName {
+      font-size: 18px;
+      padding: 5px;
+      width: 200px;
+    }
+    #clickBtn {
+      padding: 20px 40px;
+      font-size: 24px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    #clickBtn:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #score, #timer, #message {
+      margin-top: 20px;
+      font-size: 24px;
+    }
+    #leaderboard {
+      margin-top: 40px;
+    }
+    table {
+      margin: 0 auto;
+      border-collapse: collapse;
+      font-size: 18px;
+      width: 320px;
+    }
+    th, td {
+      border: 1px solid #333;
+      padding: 8px 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Klickspiel mit Firebase Rangliste</h1>
+
+  <div>
+    <p>Gib deinen Namen ein:</p>
+    <input type="text" id="playerName" placeholder="Dein Name" />
+    <br />
+    <button id="clickBtn">Spiel starten</button>
+  </div>
+
+  <div id="gameInfo" style="display:none;">
+    <div id="timer">Zeit: 10</div>
+    <div id="score">Klicks: 0</div>
+    <div id="message"></div>
+  </div>
+
+  <div id="leaderboard">
+    <h2>🏆 Rangliste</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Platz</th>
+          <th>Name</th>
+          <th>Klicks</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboardBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Firebase SDK (modular) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDyaHbprlxfQwh7qQQVdInIraewFm_yKO0",
+      authDomain: "klick-c050d.firebaseapp.com",
+      projectId: "klick-c050d",
+      storageBucket: "klick-c050d.firebasestorage.app",
+      messagingSenderId: "814390730204",
+      appId: "1:814390730204:web:cb9fc2034e61b1ec9fc319",
+      measurementId: "G-6BVP44Y6XQ"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let score = 0;
+    let timeLeft = 10;
+    let countdown = null;
+    let player = "";
+    let gameRunning = false;
+
+    const clickBtn = document.getElementById("clickBtn");
+    const playerNameInput = document.getElementById("playerName");
+    const timerDisplay = document.getElementById("timer");
+    const scoreDisplay = document.getElementById("score");
+    const message = document.getElementById("message");
+    const gameInfo = document.getElementById("gameInfo");
+    const leaderboardBody = document.getElementById("leaderboardBody");
+
+    clickBtn.addEventListener("click", () => {
+      if (!gameRunning) {
+        startGame();
+      } else {
+        score++;
+        scoreDisplay.textContent = "Klicks: " + score;
+      }
+    });
+
+    function startGame() {
+      // Falls Spieler schon gesetzt ist (Nochmal spielen), dann nutze den Namen,
+      // ansonsten nimm den Input-Wert
+      if (!player) {
+        player = playerNameInput.value.trim();
+      }
+
+      if (!player) {
+        alert("Bitte gib einen Namen ein!");
+        return;
+      }
+
+      score = 0;
+      timeLeft = 10;
+      gameRunning = true;
+
+      playerNameInput.disabled = true;
+      clickBtn.textContent = "Klick mich!";
+      clickBtn.disabled = false;
+      gameInfo.style.display = "block";
+      message.textContent = "";
+      scoreDisplay.textContent = "Klicks: 0";
+      timerDisplay.textContent = "Zeit: 10";
+
+      // Name nach Start leeren, aber in Variable behalten für mehrere Spiele
+      playerNameInput.value = "";
+
+      countdown = setInterval(() => {
+        timeLeft--;
+        timerDisplay.textContent = "Zeit: " + timeLeft;
+
+        if (timeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+    }
+
+    async function endGame() {
+      clearInterval(countdown);
+      gameRunning = false;
+      clickBtn.disabled = true;
+      message.textContent = `Zeit abgelaufen! Du hast ${score} Klicks geschafft.`;
+
+      try {
+        await addDoc(collection(db, "scores"), {
+          name: player,
+          score: score,
+          timestamp: serverTimestamp()
+        });
+      } catch (error) {
+        console.error("Fehler beim Speichern:", error);
+      }
+
+      await updateLeaderboard();
+
+      clickBtn.textContent = "Nochmal spielen";
+      clickBtn.disabled = false;
+      playerNameInput.disabled = false;
+    }
+
+    async function updateLeaderboard() {
+      leaderboardBody.innerHTML = "";
+
+      try {
+        const q = query(collection(db, "scores"), orderBy("score", "desc"), limit(10));
+        const querySnapshot = await getDocs(q);
+
+        let rank = 1;
+        querySnapshot.forEach(doc => {
+          const data = doc.data();
+          const row = document.createElement("tr");
+
+          const rankCell = document.createElement("td");
+          rankCell.textContent = rank++;
+          row.appendChild(rankCell);
+
+          const nameCell = document.createElement("td");
+          nameCell.textContent = data.name;
+          row.appendChild(nameCell);
+
+          const scoreCell = document.createElement("td");
+          scoreCell.textContent = data.score;
+          row.appendChild(scoreCell);
+
+          leaderboardBody.appendChild(row);
+        });
+
+        if(rank === 1) {
+          // Keine Einträge vorhanden
+          leaderboardBody.innerHTML = '<tr><td colspan="3">Keine Einträge vorhanden</td></tr>';
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden der Rangliste:", error);
+        leaderboardBody.innerHTML = '<tr><td colspan="3">Fehler beim Laden der Rangliste</td></tr>';
+      }
+    }
+
+    // Rangliste beim Laden der Seite anzeigen
+    updateLeaderboard();
+  </script>
+
+</body>
+</html>
